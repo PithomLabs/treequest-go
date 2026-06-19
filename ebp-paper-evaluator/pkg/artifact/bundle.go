@@ -24,6 +24,7 @@ type Provenance struct {
 	DocumentHash     string            `json:"document_hash"`
 	PolicySourceHash string            `json:"policy_source_hash"`
 	PolicyIRHash     string            `json:"policy_ir_hash"`
+	PolicyIRSource   string            `json:"policy_ir_source"`
 	ProfileID        string            `json:"profile_id"`
 	Models           map[string]string `json:"models"`
 	StopReasons      map[string]string `json:"stop_reasons"`

@@ -9,7 +9,9 @@ import (
 	"ebp-paper-evaluator/pkg/llm"
 	"ebp-paper-evaluator/pkg/metadata"
 	"ebp-paper-evaluator/pkg/policy"
+	"ebp-paper-evaluator/pkg/simple"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/PithomLabs/treequest-go/pkg/algo"
@@ -17,6 +19,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 type codec struct{}
@@ -29,16 +33,153 @@ func (codec) UnmarshalState(b []byte) (eval.AssessmentState, error) {
 }
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("usage: ebp-paper-evaluator <run|compile-policy>")
+		log.Fatal("usage: ebp-paper-evaluator <run|triple-review|compile-policy>")
 	}
 	switch os.Args[1] {
 	case "compile-policy":
 		compile(os.Args[2:])
 	case "run":
 		run(os.Args[2:])
+	case "triple-review":
+		if err := tripleReview(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
 	default:
 		log.Fatalf("unknown command %q", os.Args[1])
 	}
+}
+
+func tripleReview(args []string) error {
+	f := flag.NewFlagSet("triple-review", flag.ContinueOnError)
+	paper := f.String("paper", "", "local .txt or .md paper")
+	inputRoot := f.String("input-root", "", "optional paper containment root")
+	maxPaperBytes := f.Int64("max-paper-bytes", document.DefaultMaxPaperBytes, "maximum local paper size")
+	includeLocalPaths := f.Bool("include-local-paths", false, "include resolved absolute source path in artifacts")
+	copySource := f.Bool("copy-source", false, "copy immutable original source into the artifact bundle")
+	pol := f.String("policy", "policies/ebp_v2_1.md", "policy markdown")
+	profPath := f.String("profile", "", "optional profile JSON path or built-in ID")
+	_ = f.Bool("allow-untrusted-policy", false, "deprecated: explicit --policy paths are trusted by the CLI")
+	provider := f.String("provider", "openrouter", "provider")
+	modelsFlag := f.String("models", "", "three comma-separated model IDs")
+	out := f.String("out", "out/triple-review", "output directory")
+	maxTokens := f.Int("max-tokens", 4000, "maximum completion tokens per reviewer")
+	timeout := f.Duration("timeout", 2*time.Minute, "overall reviewer timeout")
+	mock := f.Bool("mock", false, "deterministic mock run")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if *paper == "" {
+		return errors.New("--paper is required")
+	}
+	models := splitModels(*modelsFlag)
+	if *mock {
+		models = []string{"mock_reviewer_1", "mock_reviewer_2", "mock_reviewer_3"}
+	} else if err := validateModels(models); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	doc, err := (document.LocalTextIngestor{}).Ingest(ctx, document.PaperInput{Path: *paper, InputRoot: *inputRoot, MaxBytes: *maxPaperBytes, IncludeResolvedPath: *includeLocalPaths})
+	if err != nil {
+		return err
+	}
+	trusted, _ := filepath.Abs("policies")
+	trustedFixtures, _ := filepath.Abs(filepath.Join("testdata", "policies"))
+	bundle, err := policy.LoadBundle(*pol, policy.LoadOptions{AllowUntrusted: true, TrustedRoots: []string{trusted, trustedFixtures}})
+	if err != nil {
+		return err
+	}
+	profile, err := resolveProfile(*profPath, bundle)
+	if err != nil {
+		return err
+	}
+	var client llm.LLMClient
+	if *mock {
+		client = simpleMockClient(doc, bundle, models)
+	} else {
+		if *provider != "openrouter" {
+			return fmt.Errorf("unsupported provider %q", *provider)
+		}
+		client, err = llm.NewOpenRouterClient("OPENROUTER_API_KEY")
+		if err != nil {
+			return err
+		}
+	}
+	tracker := budget.New()
+	_, err = simple.Run(ctx, simple.Config{Document: doc, Policy: bundle, Profile: profile, Client: client, Tracker: tracker, Models: models, Out: *out, MaxTokens: *maxTokens})
+	if err != nil {
+		return err
+	}
+	if *copySource {
+		copyPath := *paper
+		if *inputRoot != "" && !filepath.IsAbs(copyPath) {
+			copyPath = filepath.Join(*inputRoot, copyPath)
+		}
+		if err = artifact.CopyLocalSource(copyPath, *out); err != nil {
+			return err
+		}
+	}
+	fmt.Println(*out)
+	return nil
+}
+
+func splitModels(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+func resolveProfile(ref string, bundle policy.PolicyBundle) (policy.EvaluationProfile, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.TrimSuffix(filepath.Base(ref), ".json") == "automated-no-faithfulness" && filepath.Base(ref) == ref {
+		return policy.DefaultProfile(bundle), nil
+	}
+	return policy.LoadProfile(ref, bundle)
+}
+func validateModels(models []string) error {
+	if len(models) != 3 {
+		return errors.New("--models must supply exactly three comma-separated model IDs in non-mock mode")
+	}
+	seen := map[string]bool{}
+	for _, m := range models {
+		if m == "" {
+			return errors.New("--models entries must be non-empty")
+		}
+		if seen[m] {
+			return errors.New("--models must contain three distinct model IDs")
+		}
+		seen[m] = true
+	}
+	return nil
+}
+
+func simpleMockClient(d document.DocumentBundle, p policy.PolicyBundle, models []string) llm.LLMClient {
+	return &llm.MockLLMClient{CustomMockFn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		if r.Task != "simple_triple_review" {
+			return llm.GenerateResponse{}, fmt.Errorf("unsupported mock role/task %s/%s", r.Role, r.Task)
+		}
+		quote := ""
+		if len(d.Sections) > 0 {
+			quote = d.Sections[0].Text
+			if len(quote) > 160 {
+				quote = quote[:160]
+			}
+		}
+		debts := []string{}
+		for _, x := range p.IR.DebtItems {
+			if x.Automated && x.Required {
+				debts = append(debts, x.ID)
+			}
+		}
+		o := simple.ReviewerOutput{ReviewerID: r.Role, ModelID: r.Model, PaperSummary: "Candidate summary of the local physics paper.", MainClaims: []simple.ReviewerClaim{{ClaimID: "claim_1", ClaimText: "The paper presents a candidate physics argument.", EvidenceQuotes: []simple.EvidenceQuote{{Quote: quote, SectionHint: "section-001"}}, EBPDebts: debts, Status: "candidate_unreviewed"}}, MapsIdentified: []string{"Candidate map requires review."}, InvariantsIdentified: []string{"Candidate invariant requires review."}, ToyChecksIdentified: []string{"Run a finite toy check."}, NullModelsIdentified: []string{"Compare with a simpler baseline."}, ObstructionsIdentified: []string{"Check known obstructions."}, FaithfulnessLimits: []string{"Formal-to-physical faithfulness requires human review."}, OverclaimWarnings: []string{"Do not treat the assessment as proof."}, RecommendedNextSteps: []string{"Verify the evidence and unresolved debts manually."}, OverallAssessment: "Automated candidate assessment requiring human review.", Limitations: append([]string(nil), simple.RequiredLimitations...)}
+		b, _ := json.Marshal(o)
+		return llm.GenerateResponse{Content: string(b), ModelID: r.Model, Usage: llm.TokenUsage{PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20}, FinishReason: "stop", PromptHash: "mock-" + r.Role}, nil
+	}}
 }
 func compile(args []string) {
 	f := flag.NewFlagSet("compile-policy", flag.ExitOnError)
@@ -60,8 +201,8 @@ func run(args []string) {
 	includeLocalPaths := f.Bool("include-local-paths", false, "include resolved absolute source path in artifacts")
 	copySource := f.Bool("copy-source", false, "copy immutable original source into the artifact bundle")
 	pol := f.String("policy", "policies/ebp_v2_1.md", "policy markdown")
-	profPath := f.String("profile", "policies/profiles/automated-no-faithfulness.json", "profile path or ID")
-	allow := f.Bool("allow-untrusted-policy", false, "execute a policy outside trusted roots")
+	profPath := f.String("profile", "", "optional profile JSON path or built-in ID")
+	_ = f.Bool("allow-untrusted-policy", false, "deprecated: explicit --policy paths are trusted by the CLI")
 	claims := f.String("claim-file", "", "debug claim override")
 	provider := f.String("provider", "openrouter", "provider")
 	ma := f.String("worker-a-model", "worker-a", "model")
@@ -81,26 +222,13 @@ func run(args []string) {
 	}
 	trusted, _ := filepath.Abs("policies")
 	trustedFixtures, _ := filepath.Abs(filepath.Join("testdata", "policies"))
-	bundle, e := policy.LoadBundle(*pol, policy.LoadOptions{AllowUntrusted: *allow, TrustedRoots: []string{trusted, trustedFixtures}})
+	bundle, e := policy.LoadBundle(*pol, policy.LoadOptions{AllowUntrusted: true, TrustedRoots: []string{trusted, trustedFixtures}})
 	if e != nil {
 		log.Fatal(e)
 	}
-	if filepath.Base(*profPath) == *profPath {
-		*profPath = filepath.Join("policies", "profiles", *profPath+".json")
-	}
-	profile, e := policy.LoadProfile(*profPath, bundle)
-	profileExplicit := false
-	f.Visit(func(x *flag.Flag) {
-		if x.Name == "profile" {
-			profileExplicit = true
-		}
-	})
-	if e != nil && profileExplicit {
-		log.Fatal(e)
-	}
+	profile, e := resolveProfile(*profPath, bundle)
 	if e != nil {
-		profile = policy.EvaluationProfile{ID: "policy-default", Name: "Policy default profile", StatusLabel: bundle.IR.ReportLanguage.StatusLabel, RequiredNotes: bundle.IR.ReportLanguage.RequiredStatements}
-		e = nil
+		log.Fatal(e)
 	}
 	var base llm.LLMClient
 	if *mock {
@@ -176,7 +304,7 @@ func run(args []string) {
 	for _, r := range usage.PromptRecords {
 		hashes = append(hashes, r.PromptHash)
 	}
-	prov := artifact.Provenance{DocumentHash: doc.Hash, PolicySourceHash: bundle.SourceHash, PolicyIRHash: bundle.IRHash, ProfileID: profile.ID, Models: map[string]string{"worker_a": *ma, "worker_b": *mb, "evaluator": *me}, StopReasons: stops, PromptHashes: hashes}
+	prov := artifact.Provenance{DocumentHash: doc.Hash, PolicySourceHash: bundle.SourceHash, PolicyIRHash: bundle.IRHash, PolicyIRSource: bundle.IRSource, ProfileID: profile.ID, Models: map[string]string{"worker_a": *ma, "worker_b": *mb, "evaluator": *me}, StopReasons: stops, PromptHashes: hashes}
 	if e = artifact.Save(*out, doc, bundle, profile, pp, arts, usage, prov); e != nil {
 		log.Fatal(e)
 	}

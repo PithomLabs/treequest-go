@@ -1,0 +1,5 @@
+Candidate Finite Physics Model
+
+This paper proposes a map from a finite model to a physical observable. It claims that a conserved quantity remains invariant under the proposed evolution.
+
+The construction requires comparison with a zero-coupling null model, a finite toy calculation, and review of possible mapping obstructions. Formal-to-physical faithfulness remains a human-review question.

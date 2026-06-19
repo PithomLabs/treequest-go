@@ -1,0 +1,1 @@
+go build -o ./bin/ebp-paper-evaluator ./cmd/ebp-paper-evaluator
