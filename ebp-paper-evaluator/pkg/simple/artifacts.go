@@ -68,6 +68,12 @@ func saveArtifacts(c Config, r Result, clusters []ClaimCluster) error {
 	if err := writeJSON(c.Out, "consensus/scoring_summary.json", r.Summary); err != nil {
 		return err
 	}
+	if err := writeJSON(c.Out, "consensus/agreement_diagnostics.json", r.AgreementDiagnostics); err != nil {
+		return err
+	}
+	if err := writeJSON(c.Out, "consensus/model_suitability.json", r.ModelSuitability); err != nil {
+		return err
+	}
 	usage := sortedPromptRecords(c.Tracker.Snapshot())
 	if err := writeJSON(c.Out, "run/budget_usage.json", usage); err != nil {
 		return err
@@ -101,6 +107,19 @@ func renderReport(c Config, r Result) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %.3f |\n", x.ReviewerID, x.ModelID, x.Score.CallStatus, x.Score.ParseStatus, x.Score.ReviewerScore)
 	}
 	fmt.Fprintf(&b, "\nRun status: `%s`; run completeness: `%.2f`; parseable-only mean reviewer score: `%.3f`; failure-inclusive mean: `%.3f`.\n", r.Summary.RunStatus, r.Summary.RunCompleteness, r.Summary.MeanReviewerScoreParseableOnly, r.Summary.MeanReviewerScoreWithFailures)
+	fmt.Fprintf(&b, "Real-provider status: `%s`\n", r.Summary.RunStatusSummary.RealProviderStatus)
+
+	switch r.Summary.RunStatusSummary.RealProviderStatus {
+	case "degraded_but_usable":
+		fmt.Fprintf(&b, "\n> [!WARNING]\n> **Real-Provider Usability: Degraded but Usable**\n>\n> Two real-provider reviewers returned strict-parseable JSON and one provider call failed.\n> This is a degraded candidate assessment, not a full triple-review result.\n> Agreement remains lexical-only and diagnostic. Low lexical agreement does not prove semantic contradiction.\n")
+	case "not_usable":
+		fmt.Fprintf(&b, "\n> [!CAUTION]\n> **Real-Provider Usability: Not Usable**\n>\n> The run did not meet the safety gates or sufficient parseable reviewer threshold.\n> Do not use this bundle for candidate evaluation.\n")
+	case "diagnostic_only":
+		fmt.Fprintf(&b, "\n> [!IMPORTANT]\n> **Real-Provider Usability: Diagnostic Only**\n>\n> Fewer than two reviewers returned parseable responses. Agreement scoring is unavailable.\n")
+	case "full_triple_review_ready":
+		fmt.Fprintf(&b, "\n> [!NOTE]\n> **Real-Provider Usability: Full Triple Review Ready**\n>\n> All three reviewers returned parseable responses and safety gates passed.\n")
+	}
+
 	if r.Summary.RunStatusSummary.ParseableReviewCount == 0 {
 		fmt.Fprintf(&b, "\nAll reviewers returned unparseable schema-incompatible output.\nNo reviewer score, agreement score, or EBP assessment should be interpreted as meaningful.\nThis is a schema-contract failure, not an EBP judgment on the paper.\n")
 	} else if r.Summary.RunStatusSummary.ParseableReviewCount < r.Summary.RunStatusSummary.ReturnedResponseCount {
@@ -155,6 +174,21 @@ func renderReport(c Config, r Result) string {
 		}
 	}
 	fmt.Fprintf(&b, "\n## Agreement and disagreement\n\nAgreement score: `%.3f` (`%s`).\n\nConflicts detected: %d. Shared obstructions: %d.\n", r.Agreement.AgreementScore, r.Agreement.AgreementStatus, len(r.Agreement.ConflictingClaims), len(r.Agreement.SharedObstructions))
+
+	if r.Summary.RunStatusSummary.ParseableReviewCount >= 2 {
+		fmt.Fprintf(&b, "\n### Agreement Diagnostics and Epistemic Hygiene\n\n")
+		if r.Summary.RunStatusSummary.RealProviderStatus == "degraded_but_usable" {
+			fmt.Fprintf(&b, "Two models parsed successfully.\n")
+			fmt.Fprintf(&b, "One provider failed.\n")
+		}
+		if r.Agreement.AgreementScore < 0.3 {
+			fmt.Fprintf(&b, "Agreement was low under lexical matching.\n")
+		} else {
+			fmt.Fprintf(&b, "Agreement is lexical-only and diagnostic.\n")
+		}
+		fmt.Fprintf(&b, "This does not prove semantic disagreement.\n\n")
+		fmt.Fprintf(&b, "The evaluator remains candidate-scoped. Agreement remains lexical-only and diagnostic. No semantic convergence, physics truth, human faithfulness review, EBP promotion, or TreeQuest parity is claimed.\n")
+	}
 	b.WriteString("\n## Possible unsupported or weakly grounded claims\n\n")
 	for _, id := range ids {
 		for _, x := range r.Agreement.PossibleHallucinations[id] {
@@ -165,6 +199,18 @@ func renderReport(c Config, r Result) string {
 	for _, x := range RequiredLimitations {
 		fmt.Fprintf(&b, "%s\n\n", x)
 	}
+
+	fmt.Fprintf(&b, "\n## Model Operational Notes\n\n")
+	for _, m := range r.ModelSuitability.Reviewers {
+		fmt.Fprintf(&b, "### %s (%s)\n\n", m.ReviewerID, m.ModelID)
+		fmt.Fprintf(&b, "- **Suitability**: `%s`\n", m.Suitability)
+		if m.FailureCategory != "" {
+			fmt.Fprintf(&b, "- **Failure Category**: `%s`\n", m.FailureCategory)
+			fmt.Fprintf(&b, "- **Error Summary**: `%s`\n", m.ErrorSummary)
+		}
+		fmt.Fprintf(&b, "- **Notes**: %s\n\n", m.Notes)
+	}
+
 	return b.String()
 }
 

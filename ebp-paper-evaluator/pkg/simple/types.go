@@ -118,6 +118,7 @@ type RunStatusSummary struct {
 	AssessmentStatus      string `json:"assessment_status"`
 	ReturnedResponseCount int    `json:"returned_response_count"`
 	ParseableReviewCount  int    `json:"parseable_review_count"`
+	RealProviderStatus    string `json:"real_provider_status"`
 }
 
 type ScoringSummary struct {
@@ -130,18 +131,82 @@ type ScoringSummary struct {
 	RunStatusSummary               RunStatusSummary `json:"run_status_summary"`
 }
 
+type ReviewerSuitability struct {
+	ReviewerID      string  `json:"reviewer_id"`
+	ModelID         string  `json:"model_id"`
+	CallStatus      string  `json:"call_status"`
+	ParseStatus     string  `json:"parse_status"`
+	Score           float64 `json:"score"`
+	Suitability     string  `json:"suitability"`
+	FailureCategory string  `json:"failure_category,omitempty"`
+	ErrorSummary    string  `json:"error_summary,omitempty"`
+	Notes           string  `json:"notes"`
+}
+
+type ModelSuitabilityLedger struct {
+	SchemaVersion string                `json:"schema_version"`
+	Mode          string                `json:"mode"`
+	Reviewers     []ReviewerSuitability `json:"reviewers"`
+}
+
+type ClaimPair struct {
+	ClaimAId         string  `json:"claim_a_id"`
+	ClaimBId         string  `json:"claim_b_id"`
+	ClaimANormalized string  `json:"claim_a_normalized"`
+	ClaimBNormalized string  `json:"claim_b_normalized"`
+	Jaccard          float64 `json:"jaccard"`
+	BelowThreshold   bool    `json:"below_threshold"`
+}
+
+type PairwiseDiagnostic struct {
+	ReviewerA         string      `json:"reviewer_a"`
+	ReviewerB         string      `json:"reviewer_b"`
+	Score             float64     `json:"score"`
+	ClosestClaimPairs []ClaimPair `json:"closest_claim_pairs"`
+}
+
+type MatchingMethod struct {
+	Type          string   `json:"type"`
+	Normalization []string `json:"normalization"`
+	Threshold     float64  `json:"threshold"`
+}
+
+type AgreementDiagnostics struct {
+	SchemaVersion              string               `json:"schema_version"`
+	AgreementStatus            string               `json:"agreement_status"`
+	AgreementScore             float64              `json:"agreement_score"`
+	ParseableReviewCount       int                  `json:"parseable_review_count"`
+	MatchingMethod             MatchingMethod       `json:"matching_method"`
+	Explanation                string               `json:"explanation"`
+	SemanticConvergenceClaimed bool                 `json:"semantic_convergence_claimed"`
+	AgreementMethodLimit       string               `json:"agreement_method_limit"`
+	Pairwise                   []PairwiseDiagnostic `json:"pairwise"`
+	DiagnosticCategories       []string             `json:"diagnostic_categories"`
+}
+
 type Provenance struct {
-	Timestamp        string            `json:"timestamp"`
-	Mode             string            `json:"mode"`
-	TreeQuestUsed    bool              `json:"treequest_used"`
-	DocumentHash     string            `json:"document_hash"`
-	PolicySourceHash string            `json:"policy_source_hash"`
-	PolicyIRHash     string            `json:"policy_ir_hash"`
-	PolicyIRSource   string            `json:"policy_ir_source"`
-	ProfileID        string            `json:"profile_id"`
-	Models           map[string]string `json:"models"`
-	RunStatus        string            `json:"run_status"`
-	RunCompleteness  float64           `json:"run_completeness"`
+	Timestamp             string            `json:"timestamp"`
+	Mode                  string            `json:"mode"`
+	TreeQuestUsed         bool              `json:"treequest_used"`
+	DocumentHash          string            `json:"document_hash"`
+	PolicySourceHash      string            `json:"policy_source_hash"`
+	PolicyIRHash          string            `json:"policy_ir_hash"`
+	PolicyIRSource        string            `json:"policy_ir_source"`
+	ProfileID             string            `json:"profile_id"`
+	Models                map[string]string `json:"models"`
+	RunStatus             string            `json:"run_status"`
+	RunCompleteness       float64           `json:"run_completeness"`
+	CallRunStatus         string            `json:"call_run_status"`
+	ParseRunStatus        string            `json:"parse_run_status"`
+	AssessmentStatus      string            `json:"assessment_status"`
+	ReturnedResponseCount int               `json:"returned_response_count"`
+	ParseableReviewCount  int               `json:"parseable_review_count"`
+	RealProviderStatus    string            `json:"real_provider_status"`
+	Temperature           float64           `json:"temperature"`
+	ResponseFormat        string            `json:"response_format,omitempty"`
+	UserMessageHash       string            `json:"user_message_hash"`
+	SystemPromptHash      map[string]string `json:"system_prompt_hash"`
+	SchemaExampleHash     string            `json:"schema_example_hash"`
 }
 
 type Config struct {
@@ -157,8 +222,10 @@ type Config struct {
 }
 
 type Result struct {
-	Reviewers  []ReviewerResult
-	Agreement  AgreementLedger
-	Summary    ScoringSummary
-	Provenance Provenance
+	Reviewers            []ReviewerResult       `json:"reviewers"`
+	Agreement            AgreementLedger        `json:"agreement"`
+	Summary              ScoringSummary         `json:"summary"`
+	Provenance           Provenance             `json:"provenance"`
+	ModelSuitability     ModelSuitabilityLedger `json:"model_suitability"`
+	AgreementDiagnostics AgreementDiagnostics   `json:"agreement_diagnostics"`
 }

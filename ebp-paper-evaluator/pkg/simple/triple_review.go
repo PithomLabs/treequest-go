@@ -2,13 +2,16 @@ package simple
 
 import (
 	"context"
+	"crypto/sha256"
 	"ebp-paper-evaluator/pkg/budget"
 	"ebp-paper-evaluator/pkg/jsonutil"
 	"ebp-paper-evaluator/pkg/llm"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -65,8 +68,73 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		results[i].Score = scoreReviewer(c, results[i], clusters, results)
 	}
 	summary := summarize(results, returned)
-	prov := Provenance{Timestamp: c.Clock().UTC().Format(time.RFC3339), Mode: "simple_triple_review", TreeQuestUsed: false, DocumentHash: c.Document.Hash, PolicySourceHash: c.Policy.SourceHash, PolicyIRHash: c.Policy.IRHash, PolicyIRSource: c.Policy.IRSource, ProfileID: c.Profile.ID, Models: map[string]string{"reviewer_1": c.Models[0], "reviewer_2": c.Models[1], "reviewer_3": c.Models[2]}, RunStatus: summary.RunStatus, RunCompleteness: summary.RunCompleteness}
-	out := Result{Reviewers: results, Agreement: agreement, Summary: summary, Provenance: prov}
+
+	sysPromptHashes := map[string]string{
+		"reviewer_1": hashString(systemPrompt(c, "reviewer_1", c.Models[0])),
+		"reviewer_2": hashString(systemPrompt(c, "reviewer_2", c.Models[1])),
+		"reviewer_3": hashString(systemPrompt(c, "reviewer_3", c.Models[2])),
+	}
+	schemaExample := reviewerOutputExample(c, "reviewer_1", "example-model")
+	schemaExampleB, _ := json.Marshal(schemaExample)
+
+	prov := Provenance{
+		Timestamp:             c.Clock().UTC().Format(time.RFC3339),
+		Mode:                  "simple_triple_review",
+		TreeQuestUsed:         false,
+		DocumentHash:          c.Document.Hash,
+		PolicySourceHash:      c.Policy.SourceHash,
+		PolicyIRHash:          c.Policy.IRHash,
+		PolicyIRSource:        c.Policy.IRSource,
+		ProfileID:             c.Profile.ID,
+		Models:                map[string]string{"reviewer_1": c.Models[0], "reviewer_2": c.Models[1], "reviewer_3": c.Models[2]},
+		RunStatus:             summary.RunStatus,
+		RunCompleteness:       summary.RunCompleteness,
+		CallRunStatus:         summary.RunStatusSummary.CallRunStatus,
+		ParseRunStatus:        summary.RunStatusSummary.ParseRunStatus,
+		AssessmentStatus:      summary.RunStatusSummary.AssessmentStatus,
+		ReturnedResponseCount: returned,
+		ParseableReviewCount:  summary.RunStatusSummary.ParseableReviewCount,
+		Temperature:           0.1,
+		ResponseFormat:        "json_object",
+		UserMessageHash:       hashString(UserInstruction),
+		SystemPromptHash:      sysPromptHashes,
+		SchemaExampleHash:     hashString(string(schemaExampleB)),
+	}
+
+	modelSuitability := buildModelSuitability(results)
+	agreementDiagnostics := BuildAgreementDiagnostics(results, agreement)
+
+	tempResult := Result{
+		Reviewers:            results,
+		Agreement:            agreement,
+		Summary:              summary,
+		Provenance:           prov,
+		ModelSuitability:     modelSuitability,
+		AgreementDiagnostics: agreementDiagnostics,
+	}
+
+	reportText := renderReport(c, tempResult)
+	safetyPassed := checkSafetyGates(c, reportText, false)
+
+	realProviderStatus := determineRealProviderStatus(
+		summary.RunStatusSummary.ParseableReviewCount,
+		returned,
+		false,
+		safetyPassed,
+	)
+
+	summary.RunStatusSummary.RealProviderStatus = realProviderStatus
+	prov.RealProviderStatus = realProviderStatus
+
+	out := Result{
+		Reviewers:            results,
+		Agreement:            agreement,
+		Summary:              summary,
+		Provenance:           prov,
+		ModelSuitability:     modelSuitability,
+		AgreementDiagnostics: agreementDiagnostics,
+	}
+
 	if err := saveArtifacts(c, out, clusters); err != nil {
 		return Result{}, err
 	}
@@ -325,4 +393,94 @@ func summarize(rs []ReviewerResult, returned int) ScoringSummary {
 func sortedPromptRecords(s budget.UsageSnapshot) budget.UsageSnapshot {
 	sort.Slice(s.PromptRecords, func(i, j int) bool { return s.PromptRecords[i].Role < s.PromptRecords[j].Role })
 	return s
+}
+
+func hashString(s string) string {
+	h := sha256.New()
+	h.Write([]byte(s))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func determineRealProviderStatus(parseableCount, returnedCount int, treeQuestUsed bool, safetyPassed bool) string {
+	if !safetyPassed || treeQuestUsed {
+		return "not_usable"
+	}
+	if parseableCount == 3 {
+		return "full_triple_review_ready"
+	}
+	if parseableCount >= 2 {
+		return "degraded_but_usable"
+	}
+	if returnedCount > 0 {
+		return "diagnostic_only"
+	}
+	return "not_usable"
+}
+
+func checkSafetyGates(c Config, report string, treeQuestUsed bool) bool {
+	if treeQuestUsed {
+		return false
+	}
+	if secretRE.MatchString(report) {
+		return false
+	}
+	for _, p := range c.Policy.IR.ReportLanguage.ForbiddenPatterns {
+		re, e := regexp.Compile(p)
+		if e != nil {
+			continue
+		}
+		if re.MatchString(report) {
+			return false
+		}
+	}
+	return true
+}
+
+func buildModelSuitability(results []ReviewerResult) ModelSuitabilityLedger {
+	suitabilities := []ReviewerSuitability{}
+	for _, r := range results {
+		suit := ReviewerSuitability{
+			ReviewerID:  r.ReviewerID,
+			ModelID:     r.ModelID,
+			CallStatus:  r.Score.CallStatus,
+			ParseStatus: r.Score.ParseStatus,
+			Score:       r.Score.ReviewerScore,
+		}
+
+		if r.Error != nil {
+			suit.Suitability = "provider_unreliable"
+			suit.FailureCategory = "reviewer_call_failed"
+			suit.ErrorSummary = r.Error.ErrorSummary
+			suit.Notes = "Model API/provider call failed: " + r.Error.ErrorSummary
+		} else if r.Parsed == nil && r.Raw != "" {
+			suit.Suitability = "not_schema_compliant"
+			suit.FailureCategory = "review_parse_failed"
+			// Extract parse/validation error
+			var errSummary string
+			parsed, err := parseReviewerOutput(r.Raw)
+			if err != nil {
+				errSummary = err.Error()
+			} else if err := validateOutput(parsed, r.ReviewerID, r.ModelID); err != nil {
+				errSummary = err.Error()
+			} else {
+				errSummary = "unknown parse failure"
+			}
+			suit.ErrorSummary = errSummary
+			suit.Notes = "Response returned but failed schema parsing/validation: " + errSummary
+		} else if r.Parsed != nil {
+			suit.Suitability = "schema_compliant_in_latest_run"
+			suit.Notes = "Response parsed successfully and is schema compliant."
+		} else {
+			suit.Suitability = "unknown"
+			suit.Notes = "Unknown reviewer state."
+		}
+
+		suitabilities = append(suitabilities, suit)
+	}
+
+	return ModelSuitabilityLedger{
+		SchemaVersion: "model-suitability-v0.1",
+		Mode:          "simple_triple_review",
+		Reviewers:     suitabilities,
+	}
 }
