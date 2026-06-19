@@ -1,0 +1,5 @@
+Paper: Quantum Gravity and Boundary Thermodynamics
+Abstract: This research paper details the boundary thermodynamics mapping of quantum gravity states, confirming the holographic area-entropy relation.
+Claims:
+1. Boundary capacity satisfies area-entropy scaling equations.
+2. The mapping preserves invariant physical properties.

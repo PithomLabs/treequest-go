@@ -1,0 +1,5 @@
+Local Paper on Boundary Models
+
+This paper presents a candidate mapping between a boundary-state count and an effective entropy quantity.
+
+The construction is limited to a finite toy model and does not establish uniqueness beyond that regime.

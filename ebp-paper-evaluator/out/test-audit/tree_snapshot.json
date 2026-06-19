@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "children_ids": [
+        "86faa29c4c493797f4a5ffbad0b6cfa4",
+        "313fb66be3835a3947f7e8d55c638fd2"
+      ],
+      "encoded_state": "eyJwYXBlcl90aXRsZSI6IkJvaG1pYW4gRmllbGQgVGhlb3J5IG1hcHBpbmcgYXJlYSBhbmQgZW50cm9weSIsInBhcGVyX2Fic3RyYWN0IjoiUGFwZXI6IFF1YW50dW0gR3Jhdml0eSBhbmQgQm91bmRhcnkgVGhlcm1vZHluYW1pY3NcbkFic3RyYWN0OiBUaGlzIHJlc2VhcmNoIHBhcGVyIGRldGFpbHMgdGhlIGJvdW5kYXJ5IHRoZXJtb2R5bmFtaWNzIG1hcHBpbmcgb2YgcXVhbnR1bSBncmF2aXR5IHN0YXRlcywgY29uZmlybWluZyB0aGUgaG9sb2dyYXBoaWMgYXJlYS1lbnRyb3B5IHJlbGF0aW9uLlxuQ2xhaW1zOlxuMS4gQm91bmRhcnkgY2FwYWNpdHkgc2F0aXNmaWVzIGFyZWEtZW50cm9weSBzY2FsaW5nIGVxdWF0aW9ucy5cbjIuIFRoZSBtYXBwaW5nIHByZXNlcnZlcyBpbnZhcmlhbnQgcGh5c2ljYWwgcHJvcGVydGllcy5cbiIsImNsYWltX2lkIjoiY2xhaW0tMDEiLCJjbGFpbV90ZXh0IjoiQm91bmRhcnkgY2FwYWNpdHkgbWF5IHVuaWZ5IGFyZWEgYW5kIGVudHJvcHkuIiwiY2xhaW1fdHlwZSI6Ik1hdGhlbWF0aWNhbCBzdHJ1Y3R1cmUiLCJtYXR1cml0eV9zdGFnZSI6IlNlZWQiLCJmdW5jdGlvbl9jbGFzcyI6IkZ1bmRhbWVudGFsIGNhbmRpZGF0ZSIsInJlbWFpbmluZ19kZWJ0IjpbIm5lZWRNYXAiLCJuZWVkSW52YXJpYW50IiwibmVlZFRveUNoZWNrIiwibmVlZE51bGxNb2RlbCIsIm5lZWRPYnN0cnVjdGlvbiIsIm5lZWRGYWl0aGZ1bG5lc3NSZXZpZXciXSwicmV0aXJlZF9kZWJ0IjpbXSwiZmluYWxfdHJ1dGhfZmxhZyI6ZmFsc2UsImNvbnN0cnVjdGl2ZV9hbmFseXNpcyI6IiIsImFkdmVyc2FyaWFsX3JldmlldyI6IiIsImV2YWx1YXRvcl9yZWFzb25pbmciOiIiLCJlYnBfc2NvcmUiOjAsIndvcmtiZW5jaF9mbGFncyI6bnVsbCwicHJvbW90aW9uX3JlYWR5IjpmYWxzZSwiZ2VuZXJhdGlvbl9kZXB0aCI6MCwicmVmaW5lbWVudF9mb2N1cyI6IiIsImJ1ZGdldF9leGhhdXN0ZWQiOmZhbHNlfQ==",
+      "score": -1,
+      "depth": 0,
+      "expand_idx": -1,
+      "wider_bandit": {
+        "alpha": 2.2,
+        "beta": 0.8
+      },
+      "deeper_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "self_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "action_bandits": {
+        "adversarial": {
+          "alpha": 0.5,
+          "beta": 0.5
+        },
+        "constructive": {
+          "alpha": 2.2,
+          "beta": 0.8
+        }
+      },
+      "generated_by_action": ""
+    },
+    {
+      "id": "86faa29c4c493797f4a5ffbad0b6cfa4",
+      "parent_id": "root",
+      "encoded_state": "eyJwYXBlcl90aXRsZSI6IkJvaG1pYW4gRmllbGQgVGhlb3J5IG1hcHBpbmcgYXJlYSBhbmQgZW50cm9weSIsInBhcGVyX2Fic3RyYWN0IjoiUGFwZXI6IFF1YW50dW0gR3Jhdml0eSBhbmQgQm91bmRhcnkgVGhlcm1vZHluYW1pY3NcbkFic3RyYWN0OiBUaGlzIHJlc2VhcmNoIHBhcGVyIGRldGFpbHMgdGhlIGJvdW5kYXJ5IHRoZXJtb2R5bmFtaWNzIG1hcHBpbmcgb2YgcXVhbnR1bSBncmF2aXR5IHN0YXRlcywgY29uZmlybWluZyB0aGUgaG9sb2dyYXBoaWMgYXJlYS1lbnRyb3B5IHJlbGF0aW9uLlxuQ2xhaW1zOlxuMS4gQm91bmRhcnkgY2FwYWNpdHkgc2F0aXNmaWVzIGFyZWEtZW50cm9weSBzY2FsaW5nIGVxdWF0aW9ucy5cbjIuIFRoZSBtYXBwaW5nIHByZXNlcnZlcyBpbnZhcmlhbnQgcGh5c2ljYWwgcHJvcGVydGllcy5cbiIsImNsYWltX2lkIjoiY2xhaW0tMDEiLCJjbGFpbV90ZXh0IjoiQm91bmRhcnkgY2FwYWNpdHkgbWF5IHVuaWZ5IGFyZWEgYW5kIGVudHJvcHkuIiwiY2xhaW1fdHlwZSI6Ik1hdGhlbWF0aWNhbCBzdHJ1Y3R1cmUiLCJtYXR1cml0eV9zdGFnZSI6IlNlZWQiLCJmdW5jdGlvbl9jbGFzcyI6IkZ1bmRhbWVudGFsIGNhbmRpZGF0ZSIsInJlbWFpbmluZ19kZWJ0IjpbIm5lZWRUb3lDaGVjayJdLCJyZXRpcmVkX2RlYnQiOlsibmVlZE1hcCIsIm5lZWRJbnZhcmlhbnQiLCJuZWVkTnVsbE1vZGVsIiwibmVlZE9ic3RydWN0aW9uIiwibmVlZEZhaXRoZnVsbmVzc1JldmlldyJdLCJmaW5hbF90cnV0aF9mbGFnIjpmYWxzZSwiY29uc3RydWN0aXZlX2FuYWx5c2lzIjoie1xuICBcInNjb3JlXCI6IDAuODUsXG4gIFwicmVtYWluaW5nX2RlYnRcIjogW1wibmVlZFRveUNoZWNrXCJdLFxuICBcInJldGlyZWRfZGVidFwiOiBbXCJuZWVkTWFwXCIsIFwibmVlZEludmFyaWFudFwiLCBcIm5lZWROdWxsTW9kZWxcIiwgXCJuZWVkT2JzdHJ1Y3Rpb25cIiwgXCJuZWVkRmFpdGhmdWxuZXNzUmV2aWV3XCJdLFxuICBcImZpbmFsX3RydXRoX2xhbmd1YWdlX2RldGVjdGVkXCI6IGZhbHNlLFxuICBcIndvcmtiZW5jaF9mbGFnc1wiOiBbXSxcbiAgXCJyZWFzb25pbmdcIjogXCJDb25zdHJ1Y3RpdmUgbWFwIGFuZCBpbnZhcmlhbnQgYXJlIGNsZWFybHkgc3RhdGVkLiBPYnN0cnVjdGluZyBhbm9tYWxpZXMgYWRkcmVzc2VkLiBMYWNrcyB0b3kgY2FsY3VsYXRpb24gdmVyaWZpY2F0aW9uLlwiXG59IiwiYWR2ZXJzYXJpYWxfcmV2aWV3IjoiIiwiZXZhbHVhdG9yX3JlYXNvbmluZyI6IkNvbnN0cnVjdGl2ZSBtYXAgYW5kIGludmFyaWFudCBhcmUgY2xlYXJseSBzdGF0ZWQuIE9ic3RydWN0aW5nIGFub21hbGllcyBhZGRyZXNzZWQuIExhY2tzIHRveSBjYWxjdWxhdGlvbiB2ZXJpZmljYXRpb24uIiwiZWJwX3Njb3JlIjowLjg1LCJ3b3JrYmVuY2hfZmxhZ3MiOlsibWlzc2luZ19jaXRhdGlvbiJdLCJwcm9tb3Rpb25fcmVhZHkiOmZhbHNlLCJnZW5lcmF0aW9uX2RlcHRoIjoxLCJyZWZpbmVtZW50X2ZvY3VzIjoiY29uc3RydWN0aXZlIiwiYnVkZ2V0X2V4aGF1c3RlZCI6ZmFsc2V9",
+      "score": 0.85,
+      "depth": 1,
+      "expand_idx": 0,
+      "wider_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "deeper_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "self_bandit": {
+        "alpha": 1.35,
+        "beta": 0.65
+      },
+      "action_bandits": {
+        "adversarial": {
+          "alpha": 0.5,
+          "beta": 0.5
+        },
+        "constructive": {
+          "alpha": 0.5,
+          "beta": 0.5
+        }
+      },
+      "generated_by_action": "constructive"
+    },
+    {
+      "id": "313fb66be3835a3947f7e8d55c638fd2",
+      "parent_id": "root",
+      "encoded_state": "eyJwYXBlcl90aXRsZSI6IkJvaG1pYW4gRmllbGQgVGhlb3J5IG1hcHBpbmcgYXJlYSBhbmQgZW50cm9weSIsInBhcGVyX2Fic3RyYWN0IjoiUGFwZXI6IFF1YW50dW0gR3Jhdml0eSBhbmQgQm91bmRhcnkgVGhlcm1vZHluYW1pY3NcbkFic3RyYWN0OiBUaGlzIHJlc2VhcmNoIHBhcGVyIGRldGFpbHMgdGhlIGJvdW5kYXJ5IHRoZXJtb2R5bmFtaWNzIG1hcHBpbmcgb2YgcXVhbnR1bSBncmF2aXR5IHN0YXRlcywgY29uZmlybWluZyB0aGUgaG9sb2dyYXBoaWMgYXJlYS1lbnRyb3B5IHJlbGF0aW9uLlxuQ2xhaW1zOlxuMS4gQm91bmRhcnkgY2FwYWNpdHkgc2F0aXNmaWVzIGFyZWEtZW50cm9weSBzY2FsaW5nIGVxdWF0aW9ucy5cbjIuIFRoZSBtYXBwaW5nIHByZXNlcnZlcyBpbnZhcmlhbnQgcGh5c2ljYWwgcHJvcGVydGllcy5cbiIsImNsYWltX2lkIjoiY2xhaW0tMDEiLCJjbGFpbV90ZXh0IjoiQm91bmRhcnkgY2FwYWNpdHkgbWF5IHVuaWZ5IGFyZWEgYW5kIGVudHJvcHkuIiwiY2xhaW1fdHlwZSI6Ik1hdGhlbWF0aWNhbCBzdHJ1Y3R1cmUiLCJtYXR1cml0eV9zdGFnZSI6IlNlZWQiLCJmdW5jdGlvbl9jbGFzcyI6IkZ1bmRhbWVudGFsIGNhbmRpZGF0ZSIsInJlbWFpbmluZ19kZWJ0IjpbIm5lZWRUb3lDaGVjayJdLCJyZXRpcmVkX2RlYnQiOlsibmVlZE1hcCIsIm5lZWRJbnZhcmlhbnQiLCJuZWVkTnVsbE1vZGVsIiwibmVlZE9ic3RydWN0aW9uIiwibmVlZEZhaXRoZnVsbmVzc1JldmlldyJdLCJmaW5hbF90cnV0aF9mbGFnIjpmYWxzZSwiY29uc3RydWN0aXZlX2FuYWx5c2lzIjoie1xuICBcInNjb3JlXCI6IDAuODUsXG4gIFwicmVtYWluaW5nX2RlYnRcIjogW1wibmVlZFRveUNoZWNrXCJdLFxuICBcInJldGlyZWRfZGVidFwiOiBbXCJuZWVkTWFwXCIsIFwibmVlZEludmFyaWFudFwiLCBcIm5lZWROdWxsTW9kZWxcIiwgXCJuZWVkT2JzdHJ1Y3Rpb25cIiwgXCJuZWVkRmFpdGhmdWxuZXNzUmV2aWV3XCJdLFxuICBcImZpbmFsX3RydXRoX2xhbmd1YWdlX2RldGVjdGVkXCI6IGZhbHNlLFxuICBcIndvcmtiZW5jaF9mbGFnc1wiOiBbXSxcbiAgXCJyZWFzb25pbmdcIjogXCJDb25zdHJ1Y3RpdmUgbWFwIGFuZCBpbnZhcmlhbnQgYXJlIGNsZWFybHkgc3RhdGVkLiBPYnN0cnVjdGluZyBhbm9tYWxpZXMgYWRkcmVzc2VkLiBMYWNrcyB0b3kgY2FsY3VsYXRpb24gdmVyaWZpY2F0aW9uLlwiXG59IiwiYWR2ZXJzYXJpYWxfcmV2aWV3IjoiIiwiZXZhbHVhdG9yX3JlYXNvbmluZyI6IkNvbnN0cnVjdGl2ZSBtYXAgYW5kIGludmFyaWFudCBhcmUgY2xlYXJseSBzdGF0ZWQuIE9ic3RydWN0aW5nIGFub21hbGllcyBhZGRyZXNzZWQuIExhY2tzIHRveSBjYWxjdWxhdGlvbiB2ZXJpZmljYXRpb24uIiwiZWJwX3Njb3JlIjowLjg1LCJ3b3JrYmVuY2hfZmxhZ3MiOlsibWlzc2luZ19jaXRhdGlvbiJdLCJwcm9tb3Rpb25fcmVhZHkiOmZhbHNlLCJnZW5lcmF0aW9uX2RlcHRoIjoxLCJyZWZpbmVtZW50X2ZvY3VzIjoiY29uc3RydWN0aXZlIiwiYnVkZ2V0X2V4aGF1c3RlZCI6ZmFsc2V9",
+      "score": 0.85,
+      "depth": 1,
+      "expand_idx": 1,
+      "wider_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "deeper_bandit": {
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "self_bandit": {
+        "alpha": 1.35,
+        "beta": 0.65
+      },
+      "action_bandits": {
+        "adversarial": {
+          "alpha": 0.5,
+          "beta": 0.5
+        },
+        "constructive": {
+          "alpha": 0.5,
+          "beta": 0.5
+        }
+      },
+      "generated_by_action": "constructive"
+    }
+  ]
+}

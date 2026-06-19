@@ -1,0 +1,15 @@
+{
+  "prompt_tokens": 200,
+  "completion_tokens": 400,
+  "total_tokens": 600,
+  "total_cost_usd": 0.0020000000000000005,
+  "worker_calls": 10,
+  "evaluator_calls": 10,
+  "retries": 0,
+  "max_turns_declared": 10,
+  "max_iterations_declared": 10,
+  "worker_prompt_tokens": 100,
+  "worker_completion_tokens": 200,
+  "evaluator_prompt_tokens": 100,
+  "evaluator_completion_tokens": 200
+}
