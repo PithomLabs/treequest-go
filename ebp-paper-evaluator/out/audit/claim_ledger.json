@@ -1,0 +1,31 @@
+{
+  "paper_title": "Bohmian Field Theory mapping area and entropy",
+  "paper_abstract": "This paper proposes boundary area mappings for physical entropy calculation.",
+  "claim_id": "claim-01",
+  "claim_text": "Boundary capacity may unify area and entropy.",
+  "claim_type": "Mathematical structure",
+  "maturity_stage": "Seed",
+  "function_class": "Fundamental candidate",
+  "remaining_debt": [
+    "needToyCheck"
+  ],
+  "retired_debt": [
+    "needMap",
+    "needInvariant",
+    "needNullModel",
+    "needObstruction",
+    "needFaithfulnessReview"
+  ],
+  "final_truth_flag": false,
+  "constructive_analysis": "{\n  \"score\": 0.85,\n  \"remaining_debt\": [\"needToyCheck\"],\n  \"retired_debt\": [\"needMap\", \"needInvariant\", \"needNullModel\", \"needObstruction\", \"needFaithfulnessReview\"],\n  \"final_truth_language_detected\": false,\n  \"workbench_flags\": [],\n  \"reasoning\": \"Constructive map and invariant are clearly stated. Obstructing anomalies addressed. Lacks toy calculation verification.\"\n}",
+  "adversarial_review": "",
+  "evaluator_reasoning": "Constructive map and invariant are clearly stated. Obstructing anomalies addressed. Lacks toy calculation verification.",
+  "ebp_score": 0.85,
+  "workbench_flags": [
+    "missing_citation"
+  ],
+  "promotion_ready": false,
+  "generation_depth": 1,
+  "refinement_focus": "constructive",
+  "budget_exhausted": false
+}
