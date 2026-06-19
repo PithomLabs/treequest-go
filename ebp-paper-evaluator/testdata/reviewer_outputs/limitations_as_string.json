@@ -1,0 +1,16 @@
+{
+  "reviewer_id": "reviewer_1",
+  "model_id": "example-model",
+  "paper_summary": "Brief summary.",
+  "main_claims": [],
+  "maps_identified": [],
+  "invariants_identified": [],
+  "toy_checks_identified": [],
+  "null_models_identified": [],
+  "obstructions_identified": [],
+  "faithfulness_limits": [],
+  "overclaim_warnings": [],
+  "recommended_next_steps": [],
+  "overall_assessment": "Assessment.",
+  "limitations": "This is a string rather than a list of strings."
+}

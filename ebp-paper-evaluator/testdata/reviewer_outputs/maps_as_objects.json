@@ -1,0 +1,21 @@
+{
+  "reviewer_id": "reviewer_1",
+  "model_id": "example-model",
+  "paper_summary": "Brief summary.",
+  "main_claims": [],
+  "maps_identified": [
+    {
+      "map": "some map",
+      "status": "candidate_unreviewed"
+    }
+  ],
+  "invariants_identified": [],
+  "toy_checks_identified": [],
+  "null_models_identified": [],
+  "obstructions_identified": [],
+  "faithfulness_limits": [],
+  "overclaim_warnings": [],
+  "recommended_next_steps": [],
+  "overall_assessment": "Assessment.",
+  "limitations": []
+}

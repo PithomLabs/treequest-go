@@ -112,13 +112,22 @@ type AgreementLedger struct {
 	PossibleHallucinations map[string][]string `json:"possible_hallucinations"`
 }
 
+type RunStatusSummary struct {
+	CallRunStatus         string `json:"call_run_status"`
+	ParseRunStatus        string `json:"parse_run_status"`
+	AssessmentStatus      string `json:"assessment_status"`
+	ReturnedResponseCount int    `json:"returned_response_count"`
+	ParseableReviewCount  int    `json:"parseable_review_count"`
+}
+
 type ScoringSummary struct {
-	RunStatus                      string  `json:"run_status"`
-	RunCompleteness                float64 `json:"run_completeness"`
-	MeanReviewerScoreParseableOnly float64 `json:"mean_reviewer_score_parseable_only"`
-	MeanReviewerScoreWithFailures  float64 `json:"mean_reviewer_score_with_failures"`
-	ParseableReviewers             int     `json:"parseable_reviewers"`
-	ReturnedReviewers              int     `json:"returned_reviewers"`
+	RunStatus                      string           `json:"run_status"`
+	RunCompleteness                float64          `json:"run_completeness"`
+	MeanReviewerScoreParseableOnly float64          `json:"mean_reviewer_score_parseable_only"`
+	MeanReviewerScoreWithFailures  float64          `json:"mean_reviewer_score_with_failures"`
+	ParseableReviewers             int              `json:"parseable_reviewers"`
+	ReturnedReviewers              int              `json:"returned_reviewers"`
+	RunStatusSummary               RunStatusSummary `json:"run_status_summary"`
 }
 
 type Provenance struct {
