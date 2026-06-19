@@ -397,3 +397,204 @@ func runWithDelay(t *testing.T, id string) Result {
 	}
 	return res
 }
+
+func TestReviewerOutputExample_NoNullArrays(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	example := reviewerOutputExample(c, "reviewer_1", "example-model")
+	b, err := json.Marshal(example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if strings.Contains(s, ":null") {
+		t.Fatalf("JSON example contains null: %s", s)
+	}
+}
+
+func TestReviewerOutputExample_ContainsMainClaimShape(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	example := reviewerOutputExample(c, "reviewer_1", "example-model")
+	if len(example.MainClaims) == 0 {
+		t.Fatal("no main claims in example")
+	}
+	cl := example.MainClaims[0]
+	if cl.ClaimID == "" || cl.ClaimText == "" || len(cl.EvidenceQuotes) == 0 || len(cl.EBPDebts) == 0 {
+		t.Fatalf("malformed claim shape: %+v", cl)
+	}
+}
+
+func TestReviewerOutputExample_StringArrayFieldsAreArraysOfStrings(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	example := reviewerOutputExample(c, "reviewer_1", "example-model")
+	if len(example.MapsIdentified) == 0 || example.MapsIdentified[0] == "" {
+		t.Fatal("maps_identified empty")
+	}
+	if len(example.Limitations) == 0 || example.Limitations[0] == "" {
+		t.Fatal("limitations empty")
+	}
+}
+
+func TestReviewerOutputExample_UsesPolicyDebtIDs(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	example := reviewerOutputExample(c, "reviewer_1", "example-model")
+	debt := example.MainClaims[0].EBPDebts
+	if len(debt) != 2 || debt[0] != "needMap" || debt[1] != "needInvariant" {
+		t.Fatalf("unexpected debts: %v", debt)
+	}
+}
+
+func TestSystemPrompt_IncludesExplicitArrayNeverNullRule(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	prompt := systemPrompt(c, "reviewer_1", "example-model")
+	if !strings.Contains(prompt, "All array fields must be arrays, never null") {
+		t.Fatal("missing never null rule")
+	}
+}
+
+func TestSystemPrompt_IncludesNoUnknownFieldsRule(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	prompt := systemPrompt(c, "reviewer_1", "example-model")
+	if !strings.Contains(prompt, "Do not add unknown fields") {
+		t.Fatal("missing unknown fields rule")
+	}
+}
+
+func TestSystemPrompt_IncludesNoMarkdownFenceRule(t *testing.T) {
+	c := fixtureConfig(t, nil)
+	prompt := systemPrompt(c, "reviewer_1", "example-model")
+	if !strings.Contains(prompt, "Do not use Markdown fences") {
+		t.Fatal("missing markdown fence rule")
+	}
+}
+
+func TestReviewerParse_ObservedLimitationsAsStringFailsClearly(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reviewer_outputs", "limitations_as_string.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseReviewerOutput(string(b))
+	if err == nil {
+		t.Fatal("expected failure on limitations as string")
+	}
+}
+
+func TestReviewerParse_ObservedMapsAsObjectsFailsClearly(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reviewer_outputs", "maps_as_objects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseReviewerOutput(string(b))
+	if err == nil {
+		t.Fatal("expected failure on maps as objects")
+	}
+}
+
+func TestReviewerParse_ObservedWrongClaimKeysFailsClearly(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reviewer_outputs", "wrong_claim_keys.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseReviewerOutput(string(b))
+	if err == nil {
+		t.Fatal("expected failure on wrong claim keys")
+	}
+}
+
+func TestReviewerParse_ObservedDebtsAsObjectFailsClearly(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reviewer_outputs", "debts_as_object.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseReviewerOutput(string(b))
+	if err == nil {
+		t.Fatal("expected failure on debts as object")
+	}
+}
+
+func TestReviewerParse_ObservedNullCollectionsFailsClearly(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "reviewer_outputs", "null_collections.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parseReviewerOutput(string(b))
+	if err == nil {
+		t.Fatal("expected failure on missing limitations collection")
+	}
+}
+
+func TestTripleReview_AllReturnedButNoneParseable_StatusIsNoParseableReviews(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		return llm.GenerateResponse{Content: "bad json", ModelID: r.Model}, nil
+	}}
+	cfg := fixtureConfig(t, c)
+	res, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.RunStatusSummary.ReturnedResponseCount != 3 {
+		t.Fatalf("expected 3 returned responses, got %d", res.Summary.RunStatusSummary.ReturnedResponseCount)
+	}
+	if res.Summary.RunStatusSummary.ParseableReviewCount != 0 {
+		t.Fatalf("expected 0 parseable reviews, got %d", res.Summary.RunStatusSummary.ParseableReviewCount)
+	}
+	if res.Summary.RunStatusSummary.ParseRunStatus != "no_parseable_reviews" {
+		t.Fatalf("expected no_parseable_reviews, got %s", res.Summary.RunStatusSummary.ParseRunStatus)
+	}
+	if res.Summary.RunStatusSummary.AssessmentStatus != "assessment_unavailable_schema_parse_failed" {
+		t.Fatalf("expected assessment_unavailable_schema_parse_failed, got %s", res.Summary.RunStatusSummary.AssessmentStatus)
+	}
+}
+
+func TestTripleReview_ReportDoesNotTreatAllZeroParseAsEBPScore(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		return llm.GenerateResponse{Content: "bad json", ModelID: r.Model}, nil
+	}}
+	cfg := fixtureConfig(t, c)
+	_, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(cfg.Out, "report", "triple_review_report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(report)
+	if !strings.Contains(s, "All reviewers returned unparseable schema-incompatible output") {
+		t.Fatal("missing parse failure warning in report")
+	}
+	if !strings.Contains(s, "No reviewer score, agreement score, or EBP assessment should be interpreted as meaningful") {
+		t.Fatal("missing disclaimer in report")
+	}
+}
+
+func TestTripleReview_PartialParseableReviews_StatusIsDegradedAssessment(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		if r.Role == "reviewer_3" {
+			return llm.GenerateResponse{Content: "bad json", ModelID: r.Model}, nil
+		}
+		return validResponse(r), nil
+	}}
+	cfg := fixtureConfig(t, c)
+	res, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.RunStatusSummary.ParseableReviewCount != 2 {
+		t.Fatalf("expected 2 parseable reviews, got %d", res.Summary.RunStatusSummary.ParseableReviewCount)
+	}
+	if res.Summary.RunStatusSummary.ParseRunStatus != "partial_reviews_parseable" {
+		t.Fatalf("expected partial_reviews_parseable, got %s", res.Summary.RunStatusSummary.ParseRunStatus)
+	}
+	if res.Summary.RunStatusSummary.AssessmentStatus != "degraded_candidate_assessment_available" {
+		t.Fatalf("expected degraded_candidate_assessment_available, got %s", res.Summary.RunStatusSummary.AssessmentStatus)
+	}
+	report, err := os.ReadFile(filepath.Join(cfg.Out, "report", "triple_review_report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(report)
+	if !strings.Contains(s, "This is a degraded candidate assessment. Agreement and scoring are based only on parseable reviewer outputs") {
+		t.Fatal("missing degraded assessment warning in report")
+	}
+}
+

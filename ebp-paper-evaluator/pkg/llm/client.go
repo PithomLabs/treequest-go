@@ -13,14 +13,15 @@ import (
 
 // Message is a role-annotated chat message
 type GenerateRequest struct {
-	Role        string            `json:"role"`
-	Task        string            `json:"task"`
-	System      string            `json:"system"`
-	User        string            `json:"user"`
-	Model       string            `json:"model"`
-	Temperature float64           `json:"temperature"`
-	MaxTokens   int               `json:"max_tokens"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Role           string            `json:"role"`
+	Task           string            `json:"task"`
+	System         string            `json:"system"`
+	User           string            `json:"user"`
+	Model          string            `json:"model"`
+	Temperature    float64           `json:"temperature"`
+	MaxTokens      int               `json:"max_tokens"`
+	ResponseFormat string            `json:"response_format,omitempty"` // "", "json_object"
+	Metadata       map[string]string `json:"metadata,omitempty"`
 }
 
 // TokenUsage tracks token metrics returned by the LLM client
@@ -72,6 +73,11 @@ func (c *OpenRouterClient) Generate(ctx context.Context, req GenerateRequest) (G
 		Messages:    messages,
 		Temperature: float32(req.Temperature),
 		MaxTokens:   req.MaxTokens,
+	}
+	if req.ResponseFormat == "json_object" {
+		openrouterReq.ResponseFormat = &openrouter.ChatCompletionResponseFormat{
+			Type: openrouter.ChatCompletionResponseFormatTypeJSONObject,
+		}
 	}
 
 	resp, err := c.client.CreateChatCompletion(ctx, openrouterReq)
@@ -129,7 +135,7 @@ func (m *MockLLMClient) Generate(ctx context.Context, req GenerateRequest) (Gene
 // Helper to compute prompt hash
 func computePromptHash(req GenerateRequest) string {
 	hasher := sha256.New()
-	hasher.Write([]byte(req.Role + "\n" + req.Task + "\n" + req.System + "\n" + req.User + "\n" + req.Model + "\n"))
+	hasher.Write([]byte(req.Role + "\n" + req.Task + "\n" + req.System + "\n" + req.User + "\n" + req.Model + "\n" + req.ResponseFormat + "\n"))
 	keys := make([]string, 0, len(req.Metadata))
 	for k := range req.Metadata {
 		keys = append(keys, k)

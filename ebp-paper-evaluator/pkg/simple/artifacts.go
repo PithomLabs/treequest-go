@@ -101,6 +101,11 @@ func renderReport(c Config, r Result) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %.3f |\n", x.ReviewerID, x.ModelID, x.Score.CallStatus, x.Score.ParseStatus, x.Score.ReviewerScore)
 	}
 	fmt.Fprintf(&b, "\nRun status: `%s`; run completeness: `%.2f`; parseable-only mean reviewer score: `%.3f`; failure-inclusive mean: `%.3f`.\n", r.Summary.RunStatus, r.Summary.RunCompleteness, r.Summary.MeanReviewerScoreParseableOnly, r.Summary.MeanReviewerScoreWithFailures)
+	if r.Summary.RunStatusSummary.ParseableReviewCount == 0 {
+		fmt.Fprintf(&b, "\nAll reviewers returned unparseable schema-incompatible output.\nNo reviewer score, agreement score, or EBP assessment should be interpreted as meaningful.\nThis is a schema-contract failure, not an EBP judgment on the paper.\n")
+	} else if r.Summary.RunStatusSummary.ParseableReviewCount < r.Summary.RunStatusSummary.ReturnedResponseCount {
+		fmt.Fprintf(&b, "\nThis is a degraded candidate assessment. Agreement and scoring are based only on parseable reviewer outputs.\n")
+	}
 	if r.Summary.RunCompleteness < 1 {
 		fmt.Fprintf(&b, "\nThis was a partial triple-review run. Agreement metrics are degraded.\n")
 	}
