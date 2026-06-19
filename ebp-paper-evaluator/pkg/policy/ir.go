@@ -76,6 +76,7 @@ type PolicyBundle struct {
 	SourcePath string   `json:"source_path"`
 	SourceHash string   `json:"source_hash"`
 	IRHash     string   `json:"ir_hash"`
+	IRSource   string   `json:"ir_source"`
 	Markdown   string   `json:"markdown,omitempty"`
 	IR         PolicyIR `json:"ir"`
 	Trusted    bool     `json:"trusted"`

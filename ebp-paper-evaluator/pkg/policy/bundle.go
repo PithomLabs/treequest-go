@@ -54,6 +54,7 @@ func LoadBundle(path string, o LoadOptions) (PolicyBundle, error) {
 	}
 	sourceHash := hash(b)
 	var ir PolicyIR
+	irSource := ""
 	block, found, err := extractPolicyJSON(string(b))
 	if err != nil {
 		return PolicyBundle{}, err
@@ -62,30 +63,37 @@ func LoadBundle(path string, o LoadOptions) (PolicyBundle, error) {
 		if err = decodeStrict([]byte(block), &ir); err != nil {
 			return PolicyBundle{}, fmt.Errorf("policy-json: %w", err)
 		}
+		irSource = "inline_policy_json"
 	} else {
 		cp := o.CompiledPath
 		if cp == "" {
 			cp = strings.TrimSuffix(path, filepath.Ext(path)) + ".policy.json"
 		}
 		cb, e := os.ReadFile(cp)
-		if e != nil {
-			return PolicyBundle{}, fmt.Errorf("policy has no policy-json and compiled sidecar cannot be loaded: %w", e)
+		if errors.Is(e, os.ErrNotExist) {
+			ir = BuiltinEBP21IR()
+			irSource = "builtin_ebp_v2_1"
+		} else {
+			if e != nil {
+				return PolicyBundle{}, fmt.Errorf("load compiled policy sidecar: %w", e)
+			}
+			var c compiledPolicy
+			if e = decodeStrict(cb, &c); e != nil {
+				return PolicyBundle{}, e
+			}
+			if c.SourceHash != sourceHash {
+				return PolicyBundle{}, errors.New("compiled policy source hash mismatch")
+			}
+			ir = c.IR
+			irSource = "compiled_sidecar"
 		}
-		var c compiledPolicy
-		if e = decodeStrict(cb, &c); e != nil {
-			return PolicyBundle{}, e
-		}
-		if c.SourceHash != sourceHash {
-			return PolicyBundle{}, errors.New("compiled policy source hash mismatch")
-		}
-		ir = c.IR
 	}
 	if err = ValidateIR(ir); err != nil {
 		return PolicyBundle{}, err
 	}
 	canon, _ := canonicalIR(ir)
 	irHash := hash(canon)
-	return PolicyBundle{ID: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Version: ir.SchemaVersion, SourcePath: path, SourceHash: sourceHash, IRHash: irHash, Markdown: string(b), IR: ir, Trusted: trusted}, nil
+	return PolicyBundle{ID: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Version: ir.SchemaVersion, SourcePath: path, SourceHash: sourceHash, IRHash: irHash, IRSource: irSource, Markdown: string(b), IR: ir, Trusted: trusted}, nil
 }
 
 func Compile(path, out string) error {
@@ -97,12 +105,13 @@ func Compile(path, out string) error {
 	if e != nil {
 		return e
 	}
-	if !ok {
-		return errors.New("policy markdown has no executable policy-json block")
-	}
 	var ir PolicyIR
-	if e = decodeStrict([]byte(block), &ir); e != nil {
-		return e
+	if ok {
+		if e = decodeStrict([]byte(block), &ir); e != nil {
+			return e
+		}
+	} else {
+		ir = BuiltinEBP21IR()
 	}
 	if e = ValidateIR(ir); e != nil {
 		return e
@@ -203,4 +212,25 @@ func LoadProfile(path string, b PolicyBundle) (EvaluationProfile, error) {
 		}
 	}
 	return p, nil
+}
+
+// DefaultProfile derives an in-memory automated profile from the active
+// policy. Human-only debts remain not_assessed and do not block automated
+// readiness, so no profile file is required for the standard CLI workflow.
+func DefaultProfile(b PolicyBundle) EvaluationProfile {
+	p := EvaluationProfile{
+		ID:            "policy-default",
+		Name:          "Policy default automated profile",
+		DebtOverrides: map[string]DebtOverride{},
+		StatusLabel:   b.IR.ReportLanguage.StatusLabel,
+		RequiredNotes: append([]string(nil), b.IR.ReportLanguage.RequiredStatements...),
+	}
+	for _, d := range b.IR.DebtItems {
+		if !d.Automated {
+			p.ID = "automated-no-faithfulness"
+			p.Name = "Automated profile excluding human-only review"
+			p.DebtOverrides[d.ID] = DebtOverride{DefaultStatus: DebtNotAssessed, IncludedInAutomatedReadiness: false}
+		}
+	}
+	return p
 }
