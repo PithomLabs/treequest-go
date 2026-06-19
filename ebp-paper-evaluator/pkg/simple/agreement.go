@@ -242,3 +242,99 @@ func claimGrounded(d document.DocumentBundle, c ReviewerClaim) bool {
 	}
 	return false
 }
+
+func BuildAgreementDiagnostics(results []ReviewerResult, ledger AgreementLedger) AgreementDiagnostics {
+	parseable := []ReviewerResult{}
+	for _, r := range results {
+		if r.Parsed != nil {
+			parseable = append(parseable, r)
+		}
+	}
+
+	pairwise := []PairwiseDiagnostic{}
+	for i := 0; i < len(parseable); i++ {
+		for j := i + 1; j < len(parseable); j++ {
+			ra := parseable[i]
+			rb := parseable[j]
+
+			pairs := []ClaimPair{}
+			for _, ca := range ra.Parsed.MainClaims {
+				for _, cb := range rb.Parsed.MainClaims {
+					jac := similarity(ca.ClaimText, cb.ClaimText)
+					pairs = append(pairs, ClaimPair{
+						ClaimAId:         ca.ClaimID,
+						ClaimBId:         cb.ClaimID,
+						ClaimANormalized: normalize(ca.ClaimText),
+						ClaimBNormalized: normalize(cb.ClaimText),
+						Jaccard:          jac,
+						BelowThreshold:   jac < 0.60,
+					})
+				}
+			}
+
+			// Sort pairs by Jaccard descending
+			sort.Slice(pairs, func(x, y int) bool {
+				return pairs[x].Jaccard > pairs[y].Jaccard
+			})
+
+			// Keep top 5 closest pairs
+			if len(pairs) > 5 {
+				pairs = pairs[:5]
+			}
+
+			// Calculate set Jaccard score based on overlap threshold 0.60
+			intersection := 0
+			for _, ca := range ra.Parsed.MainClaims {
+				matched := false
+				for _, cb := range rb.Parsed.MainClaims {
+					if similarity(ca.ClaimText, cb.ClaimText) >= 0.60 {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					intersection++
+				}
+			}
+			union := len(ra.Parsed.MainClaims) + len(rb.Parsed.MainClaims) - intersection
+			pairScore := 0.0
+			if union > 0 {
+				pairScore = float64(intersection) / float64(union)
+			}
+
+			pairwise = append(pairwise, PairwiseDiagnostic{
+				ReviewerA:         ra.ReviewerID,
+				ReviewerB:         rb.ReviewerID,
+				Score:             pairScore,
+				ClosestClaimPairs: pairs,
+			})
+		}
+	}
+
+	return AgreementDiagnostics{
+		SchemaVersion:        "agreement-diagnostics-v0.1",
+		AgreementStatus:      ledger.AgreementStatus,
+		AgreementScore:       ledger.AgreementScore,
+		ParseableReviewCount: len(parseable),
+		MatchingMethod: MatchingMethod{
+			Type: "lexical_jaccard",
+			Normalization: []string{
+				"case_fold",
+				"punctuation_removal",
+				"whitespace_collapse",
+				"stable_tokenization",
+			},
+			Threshold: 0.60,
+		},
+		Explanation:                "Agreement is lexical/semantic-lite only. A low score may mean reviewers focused on different claims or expressed similar claims with insufficient lexical overlap.",
+		SemanticConvergenceClaimed: false,
+		AgreementMethodLimit:       "lexical_jaccard_only",
+		Pairwise:                    pairwise,
+		DiagnosticCategories: []string{
+			"different_focus",
+			"paraphrase_not_captured_by_lexical_matching",
+			"weak_grounding",
+			"possible_overmerge_or_undermerge",
+		},
+	}
+}

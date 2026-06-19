@@ -340,7 +340,7 @@ func TestTripleReview_ArtifactBundleComplete(t *testing.T) {
 	if _, e := Run(context.Background(), cfg); e != nil {
 		t.Fatal(e)
 	}
-	for _, p := range []string{"source/source_ref.json", "policy/policy_ir.json", "reviews/reviewer_1_raw.txt", "reviews/reviewer_3_score.json", "consensus/agreement_ledger.json", "consensus/disagreement_ledger.json", "consensus/combined_claims.json", "consensus/scoring_summary.json", "report/triple_review_report.md", "run/provenance.json", "run/budget_usage.json", "run/prompt_ledger.json"} {
+	for _, p := range []string{"source/source_ref.json", "policy/policy_ir.json", "reviews/reviewer_1_raw.txt", "reviews/reviewer_3_score.json", "consensus/agreement_ledger.json", "consensus/disagreement_ledger.json", "consensus/combined_claims.json", "consensus/scoring_summary.json", "consensus/agreement_diagnostics.json", "consensus/model_suitability.json", "report/triple_review_report.md", "run/provenance.json", "run/budget_usage.json", "run/prompt_ledger.json"} {
 		if _, e := os.Stat(filepath.Join(cfg.Out, p)); e != nil {
 			t.Fatalf("missing %s: %v", p, e)
 		}
@@ -597,4 +597,499 @@ func TestTripleReview_PartialParseableReviews_StatusIsDegradedAssessment(t *test
 		t.Fatal("missing degraded assessment warning in report")
 	}
 }
+
+func TestRealProviderStatus_States(t *testing.T) {
+	tests := []struct {
+		name           string
+		parseableCount int
+		returnedCount  int
+		treeQuestUsed  bool
+		safetyPassed   bool
+		expected       string
+	}{
+		{"full ready", 3, 3, false, true, "full_triple_review_ready"},
+		{"degraded usable", 2, 2, false, true, "degraded_but_usable"},
+		{"degraded usable 3 returned 2 parsed", 2, 3, false, true, "degraded_but_usable"},
+		{"diagnostic only 1 parsed", 1, 2, false, true, "diagnostic_only"},
+		{"diagnostic only 0 parsed", 0, 1, false, true, "diagnostic_only"},
+		{"not usable 0 returned", 0, 0, false, true, "not_usable"},
+		{"not usable safety failed", 3, 3, false, false, "not_usable"},
+		{"not usable treequest used", 3, 3, true, true, "not_usable"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := determineRealProviderStatus(tc.parseableCount, tc.returnedCount, tc.treeQuestUsed, tc.safetyPassed)
+			if got != tc.expected {
+				t.Errorf("expected %s, got %s", tc.expected, got)
+			}
+		})
+	}
+}
+
+func TestModelSuitabilityLedger_TwoParsedOneProviderFailed(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		if r.Role == "reviewer_1" {
+			return llm.GenerateResponse{}, errors.New("timeout connecting to provider api")
+		}
+		// Reviewer 2 is returned but bad json (parse failure)
+		if r.Role == "reviewer_2" {
+			return llm.GenerateResponse{Content: "bad json {", ModelID: r.Model}, nil
+		}
+		return validResponse(r), nil
+	}}
+	cfg := fixtureConfig(t, c)
+	res, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1 parsed (reviewer 3), 1 parse error (reviewer 2), 1 call error (reviewer 1)
+	ledger := res.ModelSuitability
+	if len(ledger.Reviewers) != 3 {
+		t.Fatalf("expected 3 reviewers, got %d", len(ledger.Reviewers))
+	}
+
+	r1 := ledger.Reviewers[0] // reviewer_1
+	if r1.Suitability != "provider_unreliable" || r1.FailureCategory != "reviewer_call_failed" || !strings.Contains(r1.ErrorSummary, "provider_timeout") {
+		t.Errorf("unexpected reviewer_1 suitability: %+v", r1)
+	}
+
+	r2 := ledger.Reviewers[1] // reviewer_2
+	if r2.Suitability != "not_schema_compliant" || r2.FailureCategory != "review_parse_failed" || r2.ErrorSummary == "" {
+		t.Errorf("unexpected reviewer_2 suitability: %+v", r2)
+	}
+
+	r3 := ledger.Reviewers[2] // reviewer_3
+	if r3.Suitability != "schema_compliant_in_latest_run" || r3.FailureCategory != "" {
+		t.Errorf("unexpected reviewer_3 suitability: %+v", r3)
+	}
+}
+
+func TestAgreementDiagnostics_ZeroAgreementPartialRun(t *testing.T) {
+	// Simulate reviewer 2 and reviewer 3 parsing successfully but with completely disjoint claims, producing Jaccard overlap of 0.
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		if r.Role == "reviewer_1" {
+			return llm.GenerateResponse{}, errors.New("timeout connecting to provider api")
+		}
+		resp := validResponse(r)
+		var o ReviewerOutput
+		_ = json.Unmarshal([]byte(resp.Content), &o)
+		if r.Role == "reviewer_2" {
+			o.MainClaims = []ReviewerClaim{
+				{ClaimID: "claim_a", ClaimText: "Reviewer two unique claim text about gravity waves.", Status: "candidate_unreviewed"},
+			}
+		} else if r.Role == "reviewer_3" {
+			o.MainClaims = []ReviewerClaim{
+				{ClaimID: "claim_b", ClaimText: "Reviewer three unique claim text about particle spin.", Status: "candidate_unreviewed"},
+			}
+		}
+		b, _ := json.Marshal(o)
+		resp.Content = string(b)
+		return resp, nil
+	}}
+	cfg := fixtureConfig(t, c)
+	res, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diag := res.AgreementDiagnostics
+	if diag.ParseableReviewCount != 2 {
+		t.Fatalf("expected 2 parseable reviews, got %d", diag.ParseableReviewCount)
+	}
+	if diag.AgreementScore != 0 {
+		t.Fatalf("expected 0 agreement score, got %f", diag.AgreementScore)
+	}
+	if diag.SemanticConvergenceClaimed {
+		t.Error("semantic convergence claimed should be false")
+	}
+	if diag.AgreementMethodLimit != "lexical_jaccard_only" {
+		t.Errorf("unexpected agreement method limit: %s", diag.AgreementMethodLimit)
+	}
+
+	// Pairwise diagnostics should still contain the closest claim pairs
+	if len(diag.Pairwise) != 1 {
+		t.Fatalf("expected 1 pairwise diagnostic, got %d", len(diag.Pairwise))
+	}
+	pw := diag.Pairwise[0]
+	if len(pw.ClosestClaimPairs) != 1 {
+		t.Fatalf("expected 1 closest claim pair, got %d", len(pw.ClosestClaimPairs))
+	}
+	pair := pw.ClosestClaimPairs[0]
+	if pair.ClaimAId != "claim_a" || pair.ClaimBId != "claim_b" {
+		t.Errorf("unexpected claim IDs: %s, %s", pair.ClaimAId, pair.ClaimBId)
+	}
+	if pair.Jaccard >= 0.60 {
+		t.Errorf("expected Jaccard < 0.60, got %f", pair.Jaccard)
+	}
+	if !pair.BelowThreshold {
+		t.Error("expected BelowThreshold to be true")
+	}
+}
+
+func TestReport_DegradedButUsableLanguage(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		if r.Role == "reviewer_1" {
+			return llm.GenerateResponse{}, errors.New("timeout connecting to provider api")
+		}
+		// Create a valid response with low/zero Jaccard overlap between reviewer 2 and 3
+		resp := validResponse(r)
+		var o ReviewerOutput
+		_ = json.Unmarshal([]byte(resp.Content), &o)
+		if r.Role == "reviewer_2" {
+			o.MainClaims = []ReviewerClaim{
+				{ClaimID: "claim_a", ClaimText: "Reviewer two unique claim text about gravity waves.", Status: "candidate_unreviewed"},
+			}
+		} else if r.Role == "reviewer_3" {
+			o.MainClaims = []ReviewerClaim{
+				{ClaimID: "claim_b", ClaimText: "Reviewer three unique claim text about particle spin.", Status: "candidate_unreviewed"},
+			}
+		}
+		b, _ := json.Marshal(o)
+		resp.Content = string(b)
+		return resp, nil
+	}}
+	cfg := fixtureConfig(t, c)
+	res, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reportBytes, err := os.ReadFile(filepath.Join(cfg.Out, "report", "triple_review_report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := string(reportBytes)
+
+	// Verify real_provider_status and degraded usable notices are printed
+	if !strings.Contains(report, "Real-provider status: `degraded_but_usable`") {
+		t.Error("report does not display real provider status")
+	}
+	if !strings.Contains(report, "Real-Provider Usability: Degraded but Usable") {
+		t.Error("report does not display Degraded but Usable header")
+	}
+
+	// Verify exact required wording from verdict
+	expectedPhrases := []string{
+		"Two models parsed successfully.",
+		"One provider failed.",
+		"Agreement was low under lexical matching.",
+		"This does not prove semantic disagreement.",
+		"The evaluator remains candidate-scoped. Agreement remains lexical-only and diagnostic.",
+		"No semantic convergence, physics truth, human faithfulness review, EBP promotion, or TreeQuest parity is claimed.",
+	}
+	for _, p := range expectedPhrases {
+		if !strings.Contains(report, p) {
+			t.Errorf("report is missing expected phrase: %q", p)
+		}
+	}
+
+	// Verify model operational notes are printed
+	if !strings.Contains(report, "## Model Operational Notes") {
+		t.Error("report missing Model Operational Notes section")
+	}
+	if !strings.Contains(report, "reviewer_1") || !strings.Contains(report, "reviewer_2") || !strings.Contains(report, "reviewer_3") {
+		t.Error("report missing notes for some reviewers")
+	}
+
+	// Verify provenance contains prompt hashes
+	if res.Provenance.RealProviderStatus != "degraded_but_usable" {
+		t.Errorf("unexpected provenance status: %s", res.Provenance.RealProviderStatus)
+	}
+	if res.Provenance.UserMessageHash == "" || res.Provenance.SchemaExampleHash == "" {
+		t.Error("provenance missing user message or schema example hashes")
+	}
+	if len(res.Provenance.SystemPromptHash) != 3 {
+		t.Errorf("expected 3 system prompt hashes, got %d", len(res.Provenance.SystemPromptHash))
+	}
+}
+
+func TestReleaseV01_ArtifactLayout(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	if _, e := Run(context.Background(), cfg); e != nil {
+		t.Fatal(e)
+	}
+
+	expectedDirs := []string{"source", "policy", "reviews", "consensus", "report", "run"}
+	for _, d := range expectedDirs {
+		p := filepath.Join(cfg.Out, d)
+		info, err := os.Stat(p)
+		if err != nil || !info.IsDir() {
+			t.Errorf("expected directory %s to exist", p)
+		}
+	}
+
+	expectedFiles := []string{
+		"source/source_ref.json",
+		"source/source_hash.txt",
+		"policy/policy_snapshot.md",
+		"policy/policy_ir.json",
+		"policy/policy_hash.txt",
+		"reviews/reviewer_1_raw.txt",
+		"reviews/reviewer_1_parsed.json",
+		"reviews/reviewer_1_score.json",
+		"reviews/reviewer_2_raw.txt",
+		"reviews/reviewer_2_parsed.json",
+		"reviews/reviewer_2_score.json",
+		"reviews/reviewer_3_raw.txt",
+		"reviews/reviewer_3_parsed.json",
+		"reviews/reviewer_3_score.json",
+		"consensus/agreement_ledger.json",
+		"consensus/disagreement_ledger.json",
+		"consensus/combined_claims.json",
+		"consensus/scoring_summary.json",
+		"consensus/model_suitability.json",
+		"consensus/agreement_diagnostics.json",
+		"report/triple_review_report.md",
+		"run/provenance.json",
+		"run/budget_usage.json",
+		"run/prompt_ledger.json",
+	}
+
+	for _, f := range expectedFiles {
+		p := filepath.Join(cfg.Out, f)
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("expected file %s to exist", p)
+		}
+	}
+}
+
+func TestReleaseV01_ProvenanceContainsRequiredFields(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	prov := res.Provenance
+	if prov.Timestamp == "" {
+		t.Error("provenance missing timestamp")
+	}
+	if prov.Mode != "simple_triple_review" {
+		t.Errorf("unexpected mode: %s", prov.Mode)
+	}
+	if prov.DocumentHash == "" || prov.PolicySourceHash == "" || prov.PolicyIRHash == "" {
+		t.Error("provenance missing source or policy hashes")
+	}
+	if prov.RealProviderStatus != "full_triple_review_ready" {
+		t.Errorf("unexpected real provider status: %s", prov.RealProviderStatus)
+	}
+	if prov.Temperature != 0.1 {
+		t.Errorf("unexpected temperature: %f", prov.Temperature)
+	}
+	if prov.ResponseFormat != "json_object" {
+		t.Errorf("unexpected response format: %s", prov.ResponseFormat)
+	}
+	if prov.UserMessageHash == "" {
+		t.Error("provenance missing user message hash")
+	}
+	if prov.SchemaExampleHash == "" {
+		t.Error("provenance missing schema example hash")
+	}
+	if len(prov.SystemPromptHash) != 3 {
+		t.Errorf("expected 3 system prompt hashes, got %d", len(prov.SystemPromptHash))
+	}
+}
+
+func TestReleaseV01_TreeQuestUsedFalse(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	if res.Provenance.TreeQuestUsed {
+		t.Error("treequest_used must be false in simple mode")
+	}
+}
+
+func TestReleaseV01_NoProofPromotionLanguage(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	_, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	reportBytes, err := os.ReadFile(filepath.Join(cfg.Out, "report", "triple_review_report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := string(reportBytes)
+
+	forbidden := []string{
+		"proved the paper",
+		"proved the claims",
+		"EBP promotion",
+	}
+	for _, word := range forbidden {
+		if strings.Contains(strings.ToLower(report), word) {
+			// unless it's within the required limitations disclaiming them!
+			// Check if we contain disclaimers, but not affirmative promotions
+			if !strings.Contains(report, "It is not a proof") && !strings.Contains(report, "It is not full EBP promotion") {
+				t.Errorf("report may contain forbidden affirmative promotion language: %s", report)
+			}
+		}
+	}
+
+	// Verify our strict limitations exist
+	for _, lim := range RequiredLimitations {
+		if !strings.Contains(report, lim) {
+			t.Errorf("missing limitation disclaimer: %q", lim)
+		}
+	}
+}
+
+func TestReleaseV01_FaithfulnessNotAssessed(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	reportBytes, err := os.ReadFile(filepath.Join(cfg.Out, "report", "triple_review_report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := string(reportBytes)
+
+	if !strings.Contains(report, "Human faithfulness review was not performed") {
+		t.Error("report missing faithfulness disclaimer")
+	}
+
+	for _, reviewer := range res.Reviewers {
+		if reviewer.Score.Scores.FaithfulnessHumility != 1 {
+			t.Errorf("expected faithfulness humility score of 1, got %f", reviewer.Score.Scores.FaithfulnessHumility)
+		}
+	}
+}
+
+func TestReleaseV01_ModelSuitabilityEmitted(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	ledger := res.ModelSuitability
+	if ledger.SchemaVersion != "model-suitability-v0.1" {
+		t.Errorf("unexpected schema version: %s", ledger.SchemaVersion)
+	}
+	if len(ledger.Reviewers) != 3 {
+		t.Fatalf("expected 3 reviewers, got %d", len(ledger.Reviewers))
+	}
+	for _, suit := range ledger.Reviewers {
+		if suit.Suitability != "schema_compliant_in_latest_run" {
+			t.Errorf("expected schema_compliant_in_latest_run, got %s", suit.Suitability)
+		}
+		if suit.Notes == "" {
+			t.Error("suitability notes are empty")
+		}
+	}
+}
+
+func TestReleaseV01_AgreementDiagnosticsEmitted(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	diag := res.AgreementDiagnostics
+	if diag.SchemaVersion != "agreement-diagnostics-v0.1" {
+		t.Errorf("unexpected schema version: %s", diag.SchemaVersion)
+	}
+	if diag.SemanticConvergenceClaimed {
+		t.Error("semantic convergence claimed must be false")
+	}
+	if diag.AgreementMethodLimit != "lexical_jaccard_only" {
+		t.Errorf("unexpected agreement method limit: %s", diag.AgreementMethodLimit)
+	}
+	if len(diag.Pairwise) != 3 {
+		t.Errorf("expected 3 pairwise entries, got %d", len(diag.Pairwise))
+	}
+}
+
+func TestReleaseV01_LocalTextOnly(t *testing.T) {
+	ctx := context.Background()
+	ing := document.LocalTextIngestor{}
+	_, err := ing.Ingest(ctx, document.PaperInput{Path: "paper.pdf"})
+	if err == nil {
+		t.Fatal("expected error ingesting a PDF file")
+	}
+}
+
+func TestReleaseV01_MockEBPBundleComplete(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) { return validResponse(r), nil }}
+	cfg := fixtureConfig(t, c)
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	if res.Summary.RunStatusSummary.ParseableReviewCount != 3 {
+		t.Fatalf("expected 3 parseable reviews, got %d", res.Summary.RunStatusSummary.ParseableReviewCount)
+	}
+}
+
+func TestReleaseV01_MockNonEBPBundleComplete(t *testing.T) {
+	c := &recordingClient{fn: func(r llm.GenerateRequest) (llm.GenerateResponse, error) {
+		o := ReviewerOutput{
+			ReviewerID:   r.Role,
+			ModelID:      r.Model,
+			PaperSummary: "Candidate summary.",
+			MainClaims: []ReviewerClaim{
+				{
+					ClaimID:   "claim_1",
+					ClaimText: "Candidate claim.",
+					EvidenceQuotes: []EvidenceQuote{
+						{Quote: "The paper proposes a map", SectionHint: "Section 1"},
+					},
+					EBPDebts: []string{"sourceSupport"},
+					Status:   "candidate_unreviewed",
+				},
+			},
+			MapsIdentified:         []string{"Map"},
+			InvariantsIdentified:   []string{"Invariant"},
+			ToyChecksIdentified:    []string{"ToyCheck"},
+			NullModelsIdentified:   []string{"NullModel"},
+			ObstructionsIdentified: []string{"Obstruction"},
+			FaithfulnessLimits:     []string{"Faithfulness"},
+			OverclaimWarnings:      []string{"Warning"},
+			RecommendedNextSteps:   []string{"NextStep"},
+			OverallAssessment:      "Overall",
+			Limitations:            append([]string(nil), RequiredLimitations...),
+		}
+		b, _ := json.Marshal(o)
+		return llm.GenerateResponse{Content: string(b), ModelID: r.Model, PromptHash: "hash-" + r.Role, Usage: llm.TokenUsage{TotalTokens: 1}}, nil
+	}}
+	cfg := fixtureConfig(t, c)
+	
+	polPath := filepath.Join("..", "..", "testdata", "policies", "simple_review_policy.md")
+	trusted, _ := filepath.Abs("policies")
+	trustedFixtures, _ := filepath.Abs(filepath.Join("testdata", "policies"))
+	bundle, err := policy.LoadBundle(polPath, policy.LoadOptions{AllowUntrusted: true, TrustedRoots: []string{trusted, trustedFixtures}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Policy = bundle
+	cfg.Profile = policy.DefaultProfile(bundle)
+
+	res, e := Run(context.Background(), cfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	if res.Summary.RunStatusSummary.ParseableReviewCount != 3 {
+		t.Fatalf("expected 3 parseable reviews, got %d", res.Summary.RunStatusSummary.ParseableReviewCount)
+	}
+}
+
 

@@ -293,6 +293,30 @@ Malformed JSON is preserved in the reviewer raw file and marked `review_parse_fa
 
 Agreement uses normalized lexical matching and token overlap. It can identify shared, partially shared, unique, and simple negation-conflicting claims, but it is not a semantic entailment or scientific convergence engine.
 
+### Real-provider run status, suitability, and diagnostics
+
+For live runs using actual LLM providers, simple_triple_review v0.1 enforces strict schema adherence and records additional diagnostic and configuration parameters to ensure operational integrity.
+
+#### Real-Provider Status
+
+The overall usability of the run is classified as `real_provider_status` and is determined dynamically based on successful calls, parsing, and safety checks:
+- `full_triple_review_ready`: All 3 models returned parseable JSON, and safety gates passed.
+- `degraded_but_usable`: At least 2 models returned parseable JSON, and safety gates passed. Pairwise agreement and consensus scoring are limited to parseable results.
+- `diagnostic_only`: Fewer than 2 models returned parseable JSON, but at least 1 returned content. Cross-model agreement and consensus scores are not meaningful.
+- `not_usable`: All calls failed, or safety gates failed (e.g., secret leakage or policy-forbidden promotional language detected in the report).
+
+#### Model Suitability Ledger (`consensus/model_suitability.json`)
+
+To trace how well models follow instructions, this ledger logs details for each reviewer:
+- `suitability`: Classified as `schema_compliant_in_latest_run`, `usable_with_caution`, `not_schema_compliant` (if parsing/validation failed), or `provider_unreliable` (if the API call itself failed).
+- `failure_category` & `error_summary`: Machine-readable categorization of failures (e.g., `reviewer_call_failed` or `review_parse_failed`) alongside sanitized error details to distinguish network timeouts, rate limits, or schema mismatches.
+
+#### Agreement Diagnostics (`consensus/agreement_diagnostics.json`)
+
+Lexical Jaccard token overlap is highly sensitive to phrasing. When Jaccard agreement is low or zero, the diagnostics ledger logs closest-pair comparisons:
+- Even when the final agreement score is `0.000`, the top 5 closest cross-model claim pairs are saved so users can inspect semantically similar claims that fell below the `0.60` lexical threshold.
+- The diagnostics ledger explicitly sets `semantic_convergence_claimed: false` and `agreement_method_limit: "lexical_jaccard_only"` to prevent overinterpreting lexical matching scores.
+
 ## Artifact bundles
 
 ### Triple-review bundle
@@ -318,6 +342,8 @@ out/triple-review/
     disagreement_ledger.json
     combined_claims.json
     scoring_summary.json
+    model_suitability.json
+    agreement_diagnostics.json
   report/
     triple_review_report.md
   run/
@@ -331,10 +357,12 @@ When a call fails, its review files are replaced as appropriate by `reviewer_N_e
 Start with these files:
 
 1. `report/triple_review_report.md` for the human-readable assessment.
-2. `consensus/scoring_summary.json` for completeness and score means.
-3. `consensus/disagreement_ledger.json` for unique, conflicting, weakly grounded, and partially shared claims.
-4. `reviews/reviewer_N_raw.txt` to audit the original model response.
-5. `run/provenance.json` to verify paper, policy, profile, models, mode, and `treequest_used: false`.
+2. `consensus/scoring_summary.json` for completeness, score means, and `real_provider_status`.
+3. `consensus/model_suitability.json` to inspect model compliance, failures, and suitability ratings.
+4. `consensus/agreement_diagnostics.json` for pairwise Jaccard details, disclaimers, and closest-pair diagnostic logs.
+5. `consensus/disagreement_ledger.json` for unique, conflicting, weakly grounded, and partially shared claims.
+6. `reviews/reviewer_N_raw.txt` to audit the original model response.
+7. `run/provenance.json` to verify paper, policy, profile, models, mode, temperature, response format, prompt/schema hashes, and `treequest_used: false`.
 
 ### Iterative bundle
 

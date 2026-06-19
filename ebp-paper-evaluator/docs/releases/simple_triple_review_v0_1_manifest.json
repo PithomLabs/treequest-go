@@ -1,0 +1,12 @@
+{
+  "release_id": "simple_triple_review_v0_1",
+  "release_status": "simple_triple_review_v0_1_frozen",
+  "mode": "simple_triple_review",
+  "treequest_used": false,
+  "local_text_only": true,
+  "strict_json_parser": true,
+  "real_provider_status_baseline": "full_triple_review_ready",
+  "faithfulness_status": "not_assessed",
+  "semantic_convergence_claimed": false,
+  "ebp_promotion_claimed": false
+}
